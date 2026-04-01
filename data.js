@@ -1,343 +1,387 @@
 /**
- * IVC Manager Pro — Capa de datos (data.js)
+ * IVC Manager Pro — Capa de datos con Supabase (data.js)
  *
- * ARQUITECTURA:
- * Este archivo es el único punto de contacto con el almacenamiento.
- * Para migrar a Supabase, solo se modifica este archivo.
- * La UI nunca accede a localStorage directamente.
- *
- * CUANDO SE CONECTE SUPABASE:
- * 1. Reemplazar las funciones de LS.* por llamadas a supabase.from(tabla).*
- * 2. Cambiar las funciones DB.* de síncronas a async/await
- * 3. La UI solo necesita agregar await antes de cada llamada a DB.*
+ * INSTRUCCIONES:
+ * 1. Reemplaza https://spbsqkulwfnfdejaeyes.supabase.co con la URL de tu proyecto
+ * 2. Reemplaza eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwYnNxa3Vsd2ZuZmRlamFleWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NDczNDIsImV4cCI6MjA5MDQyMzM0Mn0._m7qyxvXdfLb8ivde8ZTPki0koDFV7rKuAk67l6g3RY con tu anon/public key
+ * Ambas las encuentras en: Supabase → Settings → API
  */
 
-// ─── STORAGE ADAPTER ─────────────────────────────────────────────────────────
-// Punto de intercambio: hoy = localStorage, mañana = Supabase
+// ─── CONFIGURACIÓN ───────────────────────────────────────────────────────────
+// ⚠️  CAMBIA ESTOS DOS VALORES con los de tu proyecto Supabase
 
-const Storage = {
-  get(key, defaultValue = null) {
-    try {
-      const raw = localStorage.getItem('ivc_' + key);
-      return raw ? JSON.parse(raw) : defaultValue;
-    } catch {
-      return defaultValue;
-    }
-  },
+const SUPABASE_URL  = 'https://spbsqkulwfnfdejaeyes.supabase.co';        // ej: https://xyzabc.supabase.co
+const SUPABASE_KEY  = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNwYnNxa3Vsd2ZuZmRlamFleWVzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQ4NDczNDIsImV4cCI6MjA5MDQyMzM0Mn0._m7qyxvXdfLb8ivde8ZTPki0koDFV7rKuAk67l6g3RY';   // empieza con "eyJ..."
 
-  set(key, value) {
-    try {
-      localStorage.setItem('ivc_' + key, JSON.stringify(value));
-      return true;
-    } catch (e) {
-      console.error('Error guardando en storage:', e);
-      return false;
-    }
-  },
+// ─── CLIENTE SUPABASE ────────────────────────────────────────────────────────
 
-  remove(key) {
-    try {
-      localStorage.removeItem('ivc_' + key);
-    } catch {}
-  }
-};
+const { createClient } = supabase;
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
 
-// ─── DATOS SEMILLA (demo) ────────────────────────────────────────────────────
-
-const SEED = {
-  users: [
-    { id: 1, user: 'admin',      pass: 'admin123', name: 'Administrador', rol: 'admin',    ini: 'AD' },
-    { id: 2, user: 'supervisor', pass: 'sup2024',  name: 'Supervisor',    rol: 'operador', ini: 'SV' },
-    { id: 3, user: 'luismtz',    pass: 'luis2024', name: 'Luis Martínez', rol: 'tecnico',  ini: 'LM' },
-  ],
-  equipos: [
-    { id: 1, nombre: 'Cabeza móvil Beam 200W',   cat: 'Iluminación', cant: 8, estado: 'Disponible',   tarifa: 120000, serial: 'BM-001', notas: 'Marca Shehds', mantFecha: '',           mantNotas: '' },
-    { id: 2, nombre: 'Consola MA2 Light',         cat: 'Iluminación', cant: 1, estado: 'Disponible',   tarifa: 350000, serial: 'MA2-01', notas: '',             mantFecha: '2026-04-15', mantNotas: 'Actualización firmware' },
-    { id: 3, nombre: 'Subwoofer 18"',             cat: 'Sonido',      cant: 4, estado: 'Disponible',   tarifa: 85000,  serial: 'SW-001', notas: '',             mantFecha: '',           mantNotas: '' },
-    { id: 4, nombre: 'Line Array QSC K12',        cat: 'Sonido',      cant: 6, estado: 'Disponible',   tarifa: 95000,  serial: 'QK-001', notas: '',             mantFecha: '2026-04-02', mantNotas: 'Revisar tweeter' },
-    { id: 5, nombre: 'Proyector 10000 lúmenes',   cat: 'Video',       cant: 2, estado: 'Disponible',   tarifa: 280000, serial: 'PY-001', notas: 'Optoma',       mantFecha: '',           mantNotas: '' },
-    { id: 6, nombre: 'Pantalla LED 3x2m',         cat: 'Video',       cant: 1, estado: 'Mantenimiento',tarifa: 500000, serial: 'LED-001',notas: 'Panel roto',   mantFecha: '2026-03-30', mantNotas: 'Reemplazo de panel' },
-  ],
-  eventos: [
-    { id: 1, nombre: 'Festival Música del Caribe',     cliente: 'Alcaldía de Cartagena', inicio: '2026-03-28', fin: '2026-03-30', estado: 'Planificado', equiposCant: [{id:1,cant:4},{id:3,cant:2},{id:4,cant:3}], personal: [1,2], notas: '', retornado: false },
-    { id: 2, nombre: 'Boda Pérez – Hotel Santa Clara', cliente: 'Carlos Pérez',          inicio: '2026-03-27', fin: '2026-03-27', estado: 'En curso',    equiposCant: [{id:2,cant:1},{id:5,cant:2}],               personal: [3],   notas: 'Montaje desde las 2pm', retornado: false },
-    { id: 3, nombre: 'Congreso Empresarial',           cliente: 'Cámara de Comercio',    inicio: '2026-03-10', fin: '2026-03-11', estado: 'Finalizado',  equiposCant: [{id:4,cant:2},{id:5,cant:1}],               personal: [1],   notas: '', retornado: true },
-  ],
-  personal: [
-    { id: 1, nombre: 'Luis Martínez', cargo: 'Jefe de iluminación', tel: '+57 300 123 4567', email: 'luis@ivc.co',    esp: 'Iluminación', estado: 'Activo' },
-    { id: 2, nombre: 'Ana Gómez',     cargo: 'Técnica de sonido',   tel: '+57 310 987 6543', email: 'ana@ivc.co',     esp: 'Sonido',      estado: 'Activo' },
-    { id: 3, nombre: 'Ricardo Díaz',  cargo: 'Operador de video',   tel: '+57 320 456 7890', email: 'ricardo@ivc.co', esp: 'Video',       estado: 'Activo' },
-  ],
-  clientes: [
-    { id: 1, nombre: 'Carlos Pérez',  empresa: '',                     tel: '+57 311 222 3333', email: 'carlos@gmail.com',              ciudad: 'Cartagena', tipo: 'Particular', notas: '' },
-    { id: 2, nombre: 'María González',empresa: 'Alcaldía de Cartagena',tel: '+57 5 6601000',    email: 'eventos@cartagena.gov.co',      ciudad: 'Cartagena', tipo: 'Gobierno',   notas: '' },
-    { id: 3, nombre: 'Pedro Ruiz',    empresa: 'Cámara de Comercio',   tel: '+57 310 444 5555', email: 'pedro@camaracartagena.com',     ciudad: 'Cartagena', tipo: 'Empresa',    notas: '' },
-  ],
-  cotizaciones: [
-    { id: 1, nombre: 'Boda Pérez', cliente: 'Carlos Pérez', fecha: '2026-03-27', dias: 1, equiposCant: [{id:2,cant:1},{id:5,cant:2}], descuento: 0, estado: 'Aprobada', obs: '', total: 910000 },
-  ],
-  trazabilidad: [
-    { id: 1, fecha: '2026-03-27T14:00', tipo: 'salida',       eqId: 2, eqNombre: 'Consola MA2 Light',   cant: 1, eventoNombre: 'Boda Pérez – Hotel Santa Clara', usuario: 'admin', notas: '' },
-    { id: 2, fecha: '2026-03-27T14:00', tipo: 'salida',       eqId: 5, eqNombre: 'Proyector 10000 lúmenes', cant: 2, eventoNombre: 'Boda Pérez – Hotel Santa Clara', usuario: 'admin', notas: '' },
-    { id: 3, fecha: '2026-03-11T18:30', tipo: 'retorno',      eqId: 4, eqNombre: 'Line Array QSC K12', cant: 2, eventoNombre: 'Congreso Empresarial', usuario: 'admin', notas: '' },
-    { id: 4, fecha: '2026-03-25T09:00', tipo: 'mantenimiento',eqId: 6, eqNombre: 'Pantalla LED 3x2m',  cant: 1, eventoNombre: '—', usuario: 'admin', notas: 'Panel roto' },
-  ],
-};
-
-// ─── ESTADO DE LA APP ────────────────────────────────────────────────────────
+// ─── ESTADO LOCAL (caché en memoria) ─────────────────────────────────────────
+// Se llena al iniciar la app con una sola carga desde Supabase.
+// Las operaciones de escritura actualizan la BD y el caché al mismo tiempo.
 
 const State = {
-  users:         Storage.get('users',         SEED.users),
-  equipos:       Storage.get('equipos',       SEED.equipos),
-  eventos:       Storage.get('eventos',       SEED.eventos),
-  personal:      Storage.get('personal',      SEED.personal),
-  clientes:      Storage.get('clientes',      SEED.clientes),
-  cotizaciones:  Storage.get('cotizaciones',  SEED.cotizaciones),
-  trazabilidad:  Storage.get('trazabilidad',  SEED.trazabilidad),
-
-  // Contadores de ID
-  nextId: {
-    users:        Storage.get('nextId_users',        4),
-    equipos:      Storage.get('nextId_equipos',      7),
-    eventos:      Storage.get('nextId_eventos',      4),
-    personal:     Storage.get('nextId_personal',     4),
-    clientes:     Storage.get('nextId_clientes',     4),
-    cotizaciones: Storage.get('nextId_cotizaciones', 2),
-    trazabilidad: Storage.get('nextId_trazabilidad', 5),
-  },
-
-  currentUser: null,
+  equipos:      [],
+  eventos:      [],
+  personal:     [],
+  clientes:     [],
+  cotizaciones: [],
+  trazabilidad: [],
+  currentUser:  null,
 };
 
+// ─── CARGA INICIAL ────────────────────────────────────────────────────────────
+// Llama a esta función justo después del login exitoso.
+
+async function cargarTodosLosDatos() {
+  try {
+    const [eq, ev, per, cli, cot, traz] = await Promise.all([
+      sb.from('equipos').select('*').order('id'),
+      sb.from('eventos').select('*').order('created_at', { ascending: false }),
+      sb.from('personal').select('*').order('nombre'),
+      sb.from('clientes').select('*').order('nombre'),
+      sb.from('cotizaciones').select('*').order('created_at', { ascending: false }),
+      sb.from('trazabilidad').select('*').order('created_at', { ascending: false }).limit(200),
+    ]);
+
+    // Mapear nombres de columnas de snake_case (Supabase) a camelCase (app)
+    State.equipos      = (eq.data  || []).map(mapEquipo);
+    State.eventos      = (ev.data  || []).map(mapEvento);
+    State.personal     = (per.data || []).map(mapPersona);
+    State.clientes     = (cli.data || []).map(x => x);
+    State.cotizaciones = (cot.data || []).map(mapCotizacion);
+    State.trazabilidad = (traz.data|| []).map(mapTrazabilidad);
+
+    console.log('✅ Datos cargados desde Supabase');
+  } catch (err) {
+    console.error('❌ Error al cargar datos:', err);
+    Toast.error('Error al conectar con la base de datos');
+  }
+}
+
+// ─── MAPEADORES (snake_case ↔ camelCase) ─────────────────────────────────────
+
+function mapEquipo(r) {
+  return {
+    id:        r.id,
+    nombre:    r.nombre,
+    cat:       r.cat,
+    cant:      r.cant,
+    estado:    r.estado,
+    tarifa:    r.tarifa,
+    serial:    r.serial,
+    notas:     r.notas,
+    mantFecha: r.mant_fecha || '',
+    mantNotas: r.mant_notas || '',
+  };
+}
+
+function mapEvento(r) {
+  return {
+    id:          r.id,
+    nombre:      r.nombre,
+    cliente:     r.cliente,
+    inicio:      r.inicio,
+    fin:         r.fin,
+    estado:      r.estado,
+    equiposCant: r.equipos_cant || [],
+    personal:    r.personal_ids || [],
+    notas:       r.notas,
+    retornado:   r.retornado,
+  };
+}
+
+function mapPersona(r) {
+  return {
+    id:     r.id,
+    nombre: r.nombre,
+    cargo:  r.cargo,
+    tel:    r.tel,
+    email:  r.email,
+    esp:    r.esp,
+    estado: r.estado,
+  };
+}
+
+function mapCotizacion(r) {
+  return {
+    id:          r.id,
+    nombre:      r.nombre,
+    cliente:     r.cliente,
+    fecha:       r.fecha,
+    dias:        r.dias,
+    equiposCant: r.equipos_cant || [],
+    descuento:   r.descuento,
+    estado:      r.estado,
+    obs:         r.obs,
+    total:       r.total,
+  };
+}
+
+function mapTrazabilidad(r) {
+  return {
+    id:           r.id,
+    fecha:        r.fecha,
+    tipo:         r.tipo,
+    eqId:         r.eq_id,
+    eqNombre:     r.eq_nombre,
+    cant:         r.cant,
+    eventoNombre: r.evento_nombre,
+    usuario:      r.usuario,
+    notas:        r.notas,
+  };
+}
+
 // ─── DB: CAPA DE ACCESO A DATOS ──────────────────────────────────────────────
-// Cada método guarda en Storage después de modificar State.
-// Al migrar a Supabase: reemplazar el cuerpo de cada método.
+// Misma API que antes — la UI no cambia nada.
 
 const DB = {
 
-  // ── HELPERS INTERNOS ──────────────────────────────────────────────────────
-
-  _nextId(tabla) {
-    const id = State.nextId[tabla];
-    State.nextId[tabla]++;
-    Storage.set('nextId_' + tabla, State.nextId[tabla]);
-    return id;
-  },
-
-  _save(tabla) {
-    Storage.set(tabla, State[tabla]);
-  },
-
   // ── EQUIPOS ───────────────────────────────────────────────────────────────
 
-  getEquipos() {
-    return State.equipos;
-  },
+  getEquipos() { return State.equipos; },
+  getEquipo(id) { return State.equipos.find(e => e.id === id) || null; },
 
-  getEquipo(id) {
-    return State.equipos.find(e => e.id === id) || null;
-  },
-
-  crearEquipo(datos) {
-    const equipo = {
-      id:        this._nextId('equipos'),
-      mantFecha: '',
-      mantNotas: '',
-      ...datos,
-    };
+  async crearEquipo(datos) {
+    const { data, error } = await sb.from('equipos').insert({
+      nombre:     datos.nombre,
+      cat:        datos.cat,
+      cant:       datos.cant,
+      estado:     datos.estado,
+      tarifa:     datos.tarifa,
+      serial:     datos.serial,
+      notas:      datos.notas,
+      mant_fecha: datos.mantFecha || '',
+      mant_notas: datos.mantNotas || '',
+    }).select().single();
+    if (error) throw error;
+    const equipo = mapEquipo(data);
     State.equipos.push(equipo);
-    this._save('equipos');
     return equipo;
   },
 
-  actualizarEquipo(id, datos) {
+  async actualizarEquipo(id, datos) {
+    const updates = {};
+    if (datos.nombre    !== undefined) updates.nombre     = datos.nombre;
+    if (datos.cat       !== undefined) updates.cat        = datos.cat;
+    if (datos.cant      !== undefined) updates.cant       = datos.cant;
+    if (datos.estado    !== undefined) updates.estado     = datos.estado;
+    if (datos.tarifa    !== undefined) updates.tarifa     = datos.tarifa;
+    if (datos.serial    !== undefined) updates.serial     = datos.serial;
+    if (datos.notas     !== undefined) updates.notas      = datos.notas;
+    if (datos.mantFecha !== undefined) updates.mant_fecha = datos.mantFecha;
+    if (datos.mantNotas !== undefined) updates.mant_notas = datos.mantNotas;
+
+    const { data, error } = await sb.from('equipos').update(updates).eq('id', id).select().single();
+    if (error) throw error;
+    const equipo = mapEquipo(data);
     const idx = State.equipos.findIndex(e => e.id === id);
-    if (idx === -1) return null;
-    State.equipos[idx] = { ...State.equipos[idx], ...datos };
-    this._save('equipos');
-    return State.equipos[idx];
+    if (idx >= 0) State.equipos[idx] = equipo;
+    return equipo;
   },
 
-  eliminarEquipo(id) {
+  async eliminarEquipo(id) {
+    const { error } = await sb.from('equipos').delete().eq('id', id);
+    if (error) throw error;
     State.equipos = State.equipos.filter(e => e.id !== id);
-    this._save('equipos');
   },
 
   // ── EVENTOS ───────────────────────────────────────────────────────────────
 
-  getEventos() {
-    return State.eventos;
-  },
+  getEventos() { return State.eventos; },
+  getEvento(id) { return State.eventos.find(e => e.id === id) || null; },
 
-  getEvento(id) {
-    return State.eventos.find(e => e.id === id) || null;
-  },
-
-  crearEvento(datos) {
-    const evento = {
-      id:        this._nextId('eventos'),
-      retornado: false,
-      ...datos,
-    };
-    State.eventos.push(evento);
-    this._save('eventos');
+  async crearEvento(datos) {
+    const { data, error } = await sb.from('eventos').insert({
+      nombre:       datos.nombre,
+      cliente:      datos.cliente,
+      inicio:       datos.inicio,
+      fin:          datos.fin,
+      estado:       datos.estado,
+      equipos_cant: datos.equiposCant || [],
+      personal_ids: datos.personal || [],
+      notas:        datos.notas,
+      retornado:    false,
+    }).select().single();
+    if (error) throw error;
+    const evento = mapEvento(data);
+    State.eventos.unshift(evento);
     return evento;
   },
 
-  actualizarEvento(id, datos) {
+  async actualizarEvento(id, datos) {
+    const updates = {};
+    if (datos.nombre       !== undefined) updates.nombre       = datos.nombre;
+    if (datos.cliente      !== undefined) updates.cliente      = datos.cliente;
+    if (datos.inicio       !== undefined) updates.inicio       = datos.inicio;
+    if (datos.fin          !== undefined) updates.fin          = datos.fin;
+    if (datos.estado       !== undefined) updates.estado       = datos.estado;
+    if (datos.equiposCant  !== undefined) updates.equipos_cant = datos.equiposCant;
+    if (datos.personal     !== undefined) updates.personal_ids = datos.personal;
+    if (datos.notas        !== undefined) updates.notas        = datos.notas;
+    if (datos.retornado    !== undefined) updates.retornado    = datos.retornado;
+
+    const { data, error } = await sb.from('eventos').update(updates).eq('id', id).select().single();
+    if (error) throw error;
+    const evento = mapEvento(data);
     const idx = State.eventos.findIndex(e => e.id === id);
-    if (idx === -1) return null;
-    State.eventos[idx] = { ...State.eventos[idx], ...datos };
-    this._save('eventos');
-    return State.eventos[idx];
+    if (idx >= 0) State.eventos[idx] = evento;
+    return evento;
   },
 
-  eliminarEvento(id) {
+  async eliminarEvento(id) {
+    const { error } = await sb.from('eventos').delete().eq('id', id);
+    if (error) throw error;
     State.eventos = State.eventos.filter(e => e.id !== id);
-    this._save('eventos');
   },
 
   // ── PERSONAL ──────────────────────────────────────────────────────────────
 
-  getPersonal() {
-    return State.personal;
-  },
+  getPersonal() { return State.personal; },
+  getPersona(id) { return State.personal.find(p => p.id === id) || null; },
 
-  getPersona(id) {
-    return State.personal.find(p => p.id === id) || null;
-  },
-
-  crearPersona(datos) {
-    const persona = { id: this._nextId('personal'), ...datos };
+  async crearPersona(datos) {
+    const { data, error } = await sb.from('personal').insert(datos).select().single();
+    if (error) throw error;
+    const persona = mapPersona(data);
     State.personal.push(persona);
-    this._save('personal');
     return persona;
   },
 
-  actualizarPersona(id, datos) {
+  async actualizarPersona(id, datos) {
+    const { data, error } = await sb.from('personal').update(datos).eq('id', id).select().single();
+    if (error) throw error;
+    const persona = mapPersona(data);
     const idx = State.personal.findIndex(p => p.id === id);
-    if (idx === -1) return null;
-    State.personal[idx] = { ...State.personal[idx], ...datos };
-    this._save('personal');
-    return State.personal[idx];
+    if (idx >= 0) State.personal[idx] = persona;
+    return persona;
   },
 
-  eliminarPersona(id) {
+  async eliminarPersona(id) {
+    const { error } = await sb.from('personal').delete().eq('id', id);
+    if (error) throw error;
     State.personal = State.personal.filter(p => p.id !== id);
-    this._save('personal');
   },
 
   // ── CLIENTES ──────────────────────────────────────────────────────────────
 
-  getClientes() {
-    return State.clientes;
+  getClientes() { return State.clientes; },
+  getCliente(id) { return State.clientes.find(c => c.id === id) || null; },
+
+  async crearCliente(datos) {
+    const { data, error } = await sb.from('clientes').insert(datos).select().single();
+    if (error) throw error;
+    State.clientes.push(data);
+    return data;
   },
 
-  getCliente(id) {
-    return State.clientes.find(c => c.id === id) || null;
-  },
-
-  crearCliente(datos) {
-    const cliente = { id: this._nextId('clientes'), ...datos };
-    State.clientes.push(cliente);
-    this._save('clientes');
-    return cliente;
-  },
-
-  actualizarCliente(id, datos) {
+  async actualizarCliente(id, datos) {
+    const { data, error } = await sb.from('clientes').update(datos).eq('id', id).select().single();
+    if (error) throw error;
     const idx = State.clientes.findIndex(c => c.id === id);
-    if (idx === -1) return null;
-    State.clientes[idx] = { ...State.clientes[idx], ...datos };
-    this._save('clientes');
-    return State.clientes[idx];
+    if (idx >= 0) State.clientes[idx] = data;
+    return data;
   },
 
-  eliminarCliente(id) {
+  async eliminarCliente(id) {
+    const { error } = await sb.from('clientes').delete().eq('id', id);
+    if (error) throw error;
     State.clientes = State.clientes.filter(c => c.id !== id);
-    this._save('clientes');
   },
 
   // ── COTIZACIONES ──────────────────────────────────────────────────────────
 
-  getCotizaciones() {
-    return State.cotizaciones;
-  },
+  getCotizaciones() { return State.cotizaciones; },
+  getCotizacion(id) { return State.cotizaciones.find(c => c.id === id) || null; },
 
-  getCotizacion(id) {
-    return State.cotizaciones.find(c => c.id === id) || null;
-  },
-
-  crearCotizacion(datos) {
-    const cot = { id: this._nextId('cotizaciones'), ...datos };
-    State.cotizaciones.push(cot);
-    this._save('cotizaciones');
+  async crearCotizacion(datos) {
+    const { data, error } = await sb.from('cotizaciones').insert({
+      nombre:       datos.nombre,
+      cliente:      datos.cliente,
+      fecha:        datos.fecha,
+      dias:         datos.dias,
+      equipos_cant: datos.equiposCant || [],
+      descuento:    datos.descuento,
+      estado:       datos.estado,
+      obs:          datos.obs,
+      total:        datos.total,
+    }).select().single();
+    if (error) throw error;
+    const cot = mapCotizacion(data);
+    State.cotizaciones.unshift(cot);
     return cot;
   },
 
-  actualizarCotizacion(id, datos) {
+  async actualizarCotizacion(id, datos) {
+    const updates = {};
+    if (datos.nombre       !== undefined) updates.nombre       = datos.nombre;
+    if (datos.cliente      !== undefined) updates.cliente      = datos.cliente;
+    if (datos.fecha        !== undefined) updates.fecha        = datos.fecha;
+    if (datos.dias         !== undefined) updates.dias         = datos.dias;
+    if (datos.equiposCant  !== undefined) updates.equipos_cant = datos.equiposCant;
+    if (datos.descuento    !== undefined) updates.descuento    = datos.descuento;
+    if (datos.estado       !== undefined) updates.estado       = datos.estado;
+    if (datos.obs          !== undefined) updates.obs          = datos.obs;
+    if (datos.total        !== undefined) updates.total        = datos.total;
+
+    const { data, error } = await sb.from('cotizaciones').update(updates).eq('id', id).select().single();
+    if (error) throw error;
+    const cot = mapCotizacion(data);
     const idx = State.cotizaciones.findIndex(c => c.id === id);
-    if (idx === -1) return null;
-    State.cotizaciones[idx] = { ...State.cotizaciones[idx], ...datos };
-    this._save('cotizaciones');
-    return State.cotizaciones[idx];
+    if (idx >= 0) State.cotizaciones[idx] = cot;
+    return cot;
   },
 
-  eliminarCotizacion(id) {
+  async eliminarCotizacion(id) {
+    const { error } = await sb.from('cotizaciones').delete().eq('id', id);
+    if (error) throw error;
     State.cotizaciones = State.cotizaciones.filter(c => c.id !== id);
-    this._save('cotizaciones');
   },
 
   // ── TRAZABILIDAD ──────────────────────────────────────────────────────────
 
-  getTrazabilidad() {
-    return State.trazabilidad;
-  },
+  getTrazabilidad() { return State.trazabilidad; },
 
-  registrarMovimiento(tipo, equipo, cant, eventoNombre, notas = '') {
-    const mov = {
-      id:           this._nextId('trazabilidad'),
-      fecha:        new Date().toISOString().slice(0, 16),
+  async registrarMovimiento(tipo, equipo, cant, eventoNombre, notas = '') {
+    const { data, error } = await sb.from('trazabilidad').insert({
+      fecha:         new Date().toISOString().slice(0, 16),
       tipo,
-      eqId:         equipo.id,
-      eqNombre:     equipo.nombre,
+      eq_id:         equipo.id,
+      eq_nombre:     equipo.nombre,
       cant,
-      eventoNombre,
-      usuario:      State.currentUser?.name || 'sistema',
+      evento_nombre: eventoNombre,
+      usuario:       State.currentUser?.nombre || 'sistema',
       notas,
-    };
+    }).select().single();
+    if (error) throw error;
+    const mov = mapTrazabilidad(data);
     State.trazabilidad.unshift(mov);
-    this._save('trazabilidad');
     return mov;
   },
 
-  // ── USUARIOS ──────────────────────────────────────────────────────────────
+  // ── USUARIOS / AUTH ───────────────────────────────────────────────────────
 
-  getUsers() {
-    return State.users;
+  async findUserByCredentials(email, password) {
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) return null;
+
+    // Cargar perfil extendido (rol, iniciales)
+    const { data: perfil } = await sb.from('perfiles').select('*').eq('id', data.user.id).single();
+    if (!perfil) return null;
+
+    return {
+      id:     data.user.id,
+      user:   perfil.user_name,
+      name:   perfil.nombre,
+      rol:    perfil.rol,
+      ini:    perfil.ini,
+    };
   },
 
-  findUserByCredentials(username, password) {
-    return State.users.find(u => u.user === username && u.pass === password) || null;
-  },
-
-  crearUser(datos) {
-    const user = { id: this._nextId('users'), ...datos };
-    State.users.push(user);
-    this._save('users');
-    return user;
-  },
-
-  actualizarUser(id, datos) {
-    const idx = State.users.findIndex(u => u.id === id);
-    if (idx === -1) return null;
-    State.users[idx] = { ...State.users[idx], ...datos };
-    this._save('users');
-    return State.users[idx];
-  },
-
-  eliminarUser(id) {
-    State.users = State.users.filter(u => u.id !== id);
-    this._save('users');
+  async doLogoutDB() {
+    await sb.auth.signOut();
   },
 };
 
@@ -353,18 +397,13 @@ function can(permiso) {
   return !!(State.currentUser && PERMS[State.currentUser.rol]?.[permiso]);
 }
 
-// ─── UTILIDADES DE NEGOCIO ───────────────────────────────────────────────────
-// Cálculos que dependen de los datos pero no de la UI
+// ─── UTILIDADES DE NEGOCIO ────────────────────────────────────────────────────
 
 const Calc = {
 
-  /**
-   * Unidades disponibles de un equipo.
-   * Solo cuenta eventos "En curso" (no Planificado ni Finalizado).
-   */
   disponibles(equipo) {
     let enUso = 0;
-    DB.getEventos()
+    State.eventos
       .filter(ev => ev.estado === 'En curso' && !ev.retornado)
       .forEach(ev => {
         const item = (ev.equiposCant || []).find(x => x.id === equipo.id);
@@ -373,19 +412,13 @@ const Calc = {
     return Math.max(0, equipo.cant - enUso);
   },
 
-  /**
-   * Días hasta el mantenimiento programado (negativo = vencido).
-   */
   diasHastaMant(fecha) {
     if (!fecha) return null;
     return Math.ceil((new Date(fecha) - new Date()) / 86_400_000);
   },
 
-  /**
-   * Equipos con alerta de mantenimiento activa (en mant. o próximos en 7 días).
-   */
   alertasMantenimiento() {
-    return DB.getEquipos().filter(e => {
+    return State.equipos.filter(e => {
       if (e.estado === 'Mantenimiento') return true;
       if (e.mantFecha) {
         const dias = Calc.diasHastaMant(e.mantFecha);
@@ -395,110 +428,56 @@ const Calc = {
     });
   },
 
-  /**
-   * Detecta equipos sobreasignados entre eventos activos.
-   * Retorna array de { equipo, evento, unidadesFaltantes }.
-   */
   conflictosEquipos() {
     const conflictos = [];
-    const eventosActivos = DB.getEventos().filter(e => e.estado !== 'Finalizado');
-
-    eventosActivos.forEach(ev => {
+    const activos = State.eventos.filter(e => e.estado !== 'Finalizado');
+    activos.forEach(ev => {
       (ev.equiposCant || []).forEach(asig => {
-        const equipo = DB.getEquipo(asig.id);
+        const equipo = State.equipos.find(e => e.id === asig.id);
         if (!equipo) return;
-
-        const otrosEventos = eventosActivos.filter(o =>
-          o.id !== ev.id &&
-          !(o.fin < ev.inicio || o.inicio > ev.fin)
+        const otros = activos.filter(o =>
+          o.id !== ev.id && !(o.fin < ev.inicio || o.inicio > ev.fin)
         );
-
-        const cantEnOtros = otrosEventos.reduce((sum, o) => {
+        const cantOtros = otros.reduce((s, o) => {
           const item = (o.equiposCant || []).find(x => x.id === asig.id);
-          return sum + (item ? item.cant : 0);
+          return s + (item ? item.cant : 0);
         }, 0);
-
-        const totalNecesario = cantEnOtros + asig.cant;
-        if (totalNecesario > equipo.cant) {
-          conflictos.push({
-            equipo:    equipo.nombre,
-            evento:    ev.nombre,
-            faltantes: totalNecesario - equipo.cant,
-          });
+        if (cantOtros + asig.cant > equipo.cant) {
+          conflictos.push({ equipo: equipo.nombre, evento: ev.nombre, faltantes: cantOtros + asig.cant - equipo.cant });
         }
       });
     });
-
     return conflictos;
   },
 
-  /**
-   * Calcula el total de una cotización.
-   */
   totalCotizacion(equiposCant, dias, descuentoPct) {
-    const subtotal = equiposCant.reduce((sum, item) => {
-      const eq = DB.getEquipo(item.id);
-      return sum + (eq ? eq.tarifa * item.cant * dias : 0);
-    }, 0);
+    const items = equiposCant.map(item => {
+      const eq = State.equipos.find(e => e.id === item.id);
+      return eq ? { nombre: eq.nombre, cant: item.cant, tarifa: eq.tarifa, subtotal: eq.tarifa * item.cant * dias } : null;
+    }).filter(Boolean);
+    const subtotal  = items.reduce((s, x) => s + x.subtotal, 0);
     const descuento = subtotal * (descuentoPct / 100);
-    return {
-      subtotal,
-      descuento,
-      total: subtotal - descuento,
-      items: equiposCant.map(item => {
-        const eq = DB.getEquipo(item.id);
-        return eq
-          ? { nombre: eq.nombre, cant: item.cant, tarifa: eq.tarifa, subtotal: eq.tarifa * item.cant * dias }
-          : null;
-      }).filter(Boolean),
-    };
+    return { subtotal, descuento, total: subtotal - descuento, items };
   },
 
-  /**
-   * Notificaciones del sistema basadas en estado actual.
-   */
   notificaciones() {
     const notifs = [];
     const HOY = new Date();
-
-    // Eventos próximos (próximos 3 días)
-    DB.getEventos()
-      .filter(e => e.estado === 'Planificado')
-      .forEach(ev => {
-        const dias = Math.ceil((new Date(ev.inicio) - HOY) / 86_400_000);
-        if (dias >= 0 && dias <= 3) {
-          notifs.push({
-            tipo: 'warn',
-            msg:  `Evento próximo: <b>${ev.nombre}</b> en ${dias === 0 ? 'hoy' : dias + (dias === 1 ? ' día' : ' días')}`,
-          });
-        }
-      });
-
-    // Equipos pendientes de retorno
-    DB.getEventos()
-      .filter(e => e.estado === 'Finalizado' && !e.retornado)
-      .forEach(ev => {
-        notifs.push({ tipo: 'err', msg: `Retorno pendiente: <b>${ev.nombre}</b>` });
-      });
-
-    // Mantenimientos vencidos
-    DB.getEquipos()
-      .filter(e => e.mantFecha && Calc.diasHastaMant(e.mantFecha) <= 0 && e.estado !== 'Mantenimiento')
-      .forEach(e => {
-        notifs.push({ tipo: 'err', msg: `Mantenimiento vencido: <b>${e.nombre}</b>` });
-      });
-
-    // Conflictos de equipos
+    State.eventos.filter(e => e.estado === 'Planificado').forEach(ev => {
+      const dias = Math.ceil((new Date(ev.inicio) - HOY) / 86_400_000);
+      if (dias >= 0 && dias <= 3) notifs.push({ tipo: 'warn', msg: `Evento próximo: <b>${ev.nombre}</b> en ${dias === 0 ? 'hoy' : dias + ' día' + (dias === 1 ? '' : 's')}` });
+    });
+    State.eventos.filter(e => e.estado === 'Finalizado' && !e.retornado).forEach(ev => {
+      notifs.push({ tipo: 'err', msg: `Retorno pendiente: <b>${ev.nombre}</b>` });
+    });
+    Calc.alertasMantenimiento()
+      .filter(e => Calc.diasHastaMant(e.mantFecha) <= 0 && e.estado !== 'Mantenimiento')
+      .forEach(e => notifs.push({ tipo: 'err', msg: `Mantenimiento vencido: <b>${e.nombre}</b>` }));
     Calc.conflictosEquipos().forEach(c => {
       notifs.push({ tipo: 'err', msg: `Conflicto: <b>${c.equipo}</b> sobreasignado en <b>${c.evento}</b>` });
     });
-
-    // Cotizaciones pendientes
-    const pendientes = DB.getCotizaciones().filter(c => c.estado === 'Pendiente').length;
-    if (pendientes > 0) {
-      notifs.push({ tipo: 'info', msg: `${pendientes} cotización${pendientes > 1 ? 'es' : ''} pendiente${pendientes > 1 ? 's' : ''}` });
-    }
-
+    const pend = State.cotizaciones.filter(c => c.estado === 'Pendiente').length;
+    if (pend > 0) notifs.push({ tipo: 'info', msg: `${pend} cotización${pend > 1 ? 'es' : ''} pendiente${pend > 1 ? 's' : ''}` });
     return notifs;
   },
 };
@@ -506,30 +485,8 @@ const Calc = {
 // ─── FORMATO ─────────────────────────────────────────────────────────────────
 
 const Format = {
-  moneda(valor) {
-    return new Intl.NumberFormat('es-CO', {
-      style:                 'currency',
-      currency:              'COP',
-      maximumFractionDigits: 0,
-    }).format(valor);
-  },
-
-  fecha(isoStr) {
-    if (!isoStr) return '';
-    const [y, m, d] = isoStr.split('-');
-    return `${d}/${m}/${y}`;
-  },
-
-  iniciales(nombre) {
-    return nombre
-      .split(' ')
-      .map(w => w[0])
-      .slice(0, 2)
-      .join('')
-      .toUpperCase();
-  },
-
-  rolLabel(rol) {
-    return { admin: 'Administrador', operador: 'Operador', tecnico: 'Técnico' }[rol] || rol;
-  },
+  moneda(v)    { return new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(v); },
+  fecha(s)     { if (!s) return ''; const [y, m, d] = s.split('-'); return `${d}/${m}/${y}`; },
+  iniciales(n) { return n.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase(); },
+  rolLabel(r)  { return { admin: 'Administrador', operador: 'Operador', tecnico: 'Técnico' }[r] || r; },
 };
